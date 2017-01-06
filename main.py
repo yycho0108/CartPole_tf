@@ -4,6 +4,8 @@ env = gym.make('CartPole-v0')
 env.reset()
 env.render()
 
+import sys
+
 import numpy as np
 import tensorflow as tf
 
@@ -11,11 +13,10 @@ from memory import Memory
 from qnet import *
 from layers import *
 
-
 ## Load Parameters
 gamma = .99 #Discount factor.
-num_episodes = 2000 #Total number of episodes to train network for.
-test_episodes = 2000 #Total number of episodes to train network for.
+num_episodes = 10000 #Total number of episodes to train network for.
+test_episodes = 200 #Total number of episodes to train network for.
 tau = 0.001 #Amount to update target network at each step.
 batch_size = 32 #Size of training batch
 
@@ -30,13 +31,14 @@ pre_train_steps = 50000 #Number of steps us
 tf.reset_default_graph()
 session = tf.Session()
 
+copy_ops = None
+
 def train(net, target_net, memory, episodes):
     eps = eps_start
     step = 0
-
     rewards = []
 
-    for i in range(episodes):
+    def train_once(eps, step):
         s0 = env.reset()
         net_reward = 0
         d = False
@@ -79,11 +81,31 @@ def train(net, target_net, memory, episodes):
             net_reward += r
             s0 = s1
             step += 1
+        return net_reward, eps, step
+
+    r_mean = 0
+    i = 0
+    
+    while i < episodes: 
+        net_reward, eps, step = train_once(eps, step)
         rewards.append(net_reward)
 
         if i % 100 == 0 and i > 0:
             r_mean = np.mean(rewards[-100:])
             print "Epoch : %d, Mean Reward: %f; Step : %d, Epsilon: %f" % (i, r_mean, step, eps)
+        i += 1
+
+    if raw_input('Train Until Convergence?\n').lower() == 'y':
+        while r_mean < 999:
+            net_reward, eps, step = train_once(eps, step)
+            rewards.append(net_reward)
+
+            if i % 100 == 0 and i > 0:
+                r_mean = np.mean(rewards[-100:])
+                print "Epoch : %d, Mean Reward: %f; Step : %d, Epsilon: %f" % (i, r_mean, step, eps)
+            i += 1
+
+
     return rewards
 
 def test(net, episodes):
@@ -125,19 +147,29 @@ def setup():
         target_net.append(DenseLayer((64,2)))
         target_net.setup()
 
-    copy_ops = get_copy_ops(net, target_net, tau)
-
-    # get this started...
-    session.run(tf.initialize_all_variables())
-    session.run(copy_ops)
     return net, target_net, memory
 
 def main():
-    net, target_net, memory = setup()
-    train_rewards = train(net, target_net, memory, num_episodes)
-    test_rewards = test(net, test_episodes)
+    global copy_ops
 
-    np.savetxt('train.csv', train_rewards, delimiter=',', fmt='%f')
+    net, target_net, memory = setup()
+
+    copy_ops = get_copy_ops(net, target_net, tau)
+    # get this started...
+    session.run(tf.initialize_all_variables())
+    session.run(copy_ops)
+    saver = tf.train.Saver()
+
+    if len(sys.argv) > 1 and sys.argv[1].lower() == 'load':
+        saver.restore(session, '/tmp/model.ckpt')
+        print '[loaded]'
+    else:
+        train_rewards = train(net, target_net, memory, num_episodes)
+        np.savetxt('train.csv', train_rewards, delimiter=',', fmt='%f')
+        save_path = saver.save(session, '/tmp/model.ckpt')
+        print("Model saved in file: %s" % save_path) 
+
+    test_rewards = test(net, test_episodes)
     np.savetxt('test.csv', test_rewards, delimiter=',', fmt='%f')
 
 if __name__ == "__main__":
