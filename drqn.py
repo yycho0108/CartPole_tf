@@ -109,8 +109,8 @@ class DRQN(object):
         with tf.name_scope('qn', [x]):
             with slim.arg_scope(self._arg_scope()):
                 sa, sv = tf.split(x, 2, axis=1) # split into action-value streams
-                adv = slim.fully_connected(sa, self._n_action)
-                val = slim.fully_connected(sv, 1)
+                adv = slim.fully_connected(sa, self._n_action, scope='adv')
+                val = slim.fully_connected(sv, 1, scope='val')
                 q_y = val + (adv - tf.reduce_mean(adv, axis=1, keepdims=True))
                 a_y = tf.argmax(q_y, axis=1)
 

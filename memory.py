@@ -23,6 +23,9 @@ class Memory(object):
         return self.memory[idx,:]
 
 class TraceMemory(object):
+    """
+    Dequeue Memory with Traced-Sample Support.
+    """
     def __init__(self, size=10000):
         self._memory = [[] for _ in range(size)]
         self._size = size

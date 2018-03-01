@@ -34,27 +34,27 @@ from drqn import DRQN
 N_X = 4 # size of input
 N_A = 2 # size of action
 N_H = 64 # number of hidden units
-U_FREQ = 4 # update frequency
+U_FREQ = 8 # update frequency
 N_LOG = 16
 N_BATCH = 32 # size of training batch
 N_TRACE = 8
-LEARNING_RATE = .0001
+LEARNING_RATE = 5e-4
 
 ## Q-Learning Parameters
 GAMMA = .99 #Discount factor.
 N_EPOCH = np.inf #20000 #Total number of episodes to train network for.
 N_TEST = 200 #Total number of episodes to train network for.
-TAU = 0.001 #Amount to update target network at each step.
+TAU = 1e-3#(1.0/100) * U_FREQ #Amount to update target network at each step.
 
 # Annealing Parameters
 EPS_INIT  = 1.00 #Starting chance of random action
 EPS_MIN  = 0.01 #Final chance of random action
 N_ANNEAL = 400000 #How many steps of training to reduce startE to endE.
-#EPS_DECAY = np.log(EPS_MIN)/N_ANNEAL
-EPS_DECAY = 0.995
+EPS_DECAY = EPS_MIN ** (1.0/N_ANNEAL)
+#EPS_DECAY = 0.9999
 
 N_PRE = 50000 #Number of steps, pre-train
-N_MEM = 10000
+N_MEM = 100000
 
 ## Initialize Tensorflow
 tf.reset_default_graph()
@@ -117,41 +117,44 @@ def train(
             entry.append(s0 + [a,r] + s1 + [d]) #[0:2, 2, 3, 4:6, 6]
 
             if step > N_PRE:
-                if eps > EPS_F:
+                if eps > EPS_MIN:
                     eps = max(EPS_MIN, eps * EPS_DECAY)
-                if step % U_FREQ == 0:
+                if (step % U_FREQ) == 0:
                     sess.run(copy_ops) # update ...
 
                     input_batch = memory.sample(N_BATCH, N_TRACE)
 
-                    x_in, a_in, r_in, _, d_in = np.split(input_batch, np.cumsum([N_X,1,1,N_X]), axis=-1)
+                    x0_in, a_in, r_in, x1_in, d_in = np.split(input_batch, np.cumsum([N_X,1,1,N_X]), axis=-1)
 
-                    x_in = np.reshape(x_in, [-1, N_X])
+                    x0_in = np.reshape(x0_in, [-1, N_X])
                     a_in = np.reshape(a_in, [-1])
                     r_in = np.reshape(r_in, [-1])
+                    x1_in = np.reshape(x1_in, [-1, N_X])
                     d_in = np.reshape(d_in, [-1])
 
                     c_in = np.zeros([N_BATCH, N_H])
                     h_in = np.zeros([N_BATCH, N_H])
 
-                    a1, = run(sess, net._tensors, 
-                            ['x_in', 'c_in', 'h_in', 'n_b', 'n_t'],
-                            [x_in, c_in, h_in, N_BATCH, N_TRACE],
-                            ['a_y']
-                            ) # returns action-selection indices
-                    q2, = run(sess, target_net._tensors, 
-                            ['x_in', 'c_in', 'h_in', 'n_b', 'n_t'],
-                            [x_in, c_in, h_in, N_BATCH, N_TRACE],
-                            ['q_y']
-                            ) # returns action assessment
+                    a, q = sess.run([net['a_y'], target_net['q_y']], feed_dict={
+                        net['x_in'] : x1_in,
+                        net['c_in'] : c_in,
+                        net['h_in'] : h_in,
+                        net['n_b'] : N_BATCH,
+                        net['n_t'] : N_TRACE,
+                        target_net['x_in'] : x1_in,
+                        target_net['c_in'] : c_in,
+                        target_net['h_in'] : h_in,
+                        target_net['n_b'] : N_BATCH,
+                        target_net['n_t'] : N_TRACE
+                        })
 
-                    qq = q2[range(N_BATCH*N_TRACE), a1] # "real" q values
-                    q_t = r_in + GAMMA * qq * (1 - d_in) # discounted target q
+                    q = q[range(N_BATCH*N_TRACE), a] # "real" q values
+                    q_t = r_in + GAMMA * q * (1 - d_in) # discounted target q
 
                     # update ... 
                     s, _ = sess.run([summary, train_ops],
                             feed_dict = {
-                                net['x_in'] : x_in,
+                                net['x_in'] : x0_in,
                                 net['c_in'] : c_in,
                                 net['h_in'] : h_in,
                                 net['n_b'] : N_BATCH,
@@ -220,12 +223,17 @@ def main():
     # critic-update ...
     va = drqn_a.get_trainable_variables()
     vc = drqn_c.get_trainable_variables()
-    copy_ops = [c.assign(a.value()*TAU + c.value() * (1.0-TAU)) for (a,c) in zip(va,vc)]
+
+    copy_ops = [c.assign(a.value()*TAU + c.value()*(1.0-TAU)) for (a,c) in zip(va,vc)]
+    #copy_ops = [c.assign(a.value()) for (a,c) in zip(va,vc)]
     copy_ops = tf.group(copy_ops)
 
     # train ...
     trainer = tf.train.AdamOptimizer(learning_rate=LEARNING_RATE)
-    train_ops = trainer.minimize(drqn_a._tensors['loss'])
+    train_ops = trainer.minimize(
+            drqn_a._tensors['loss'],
+            var_list = va
+            )
 
     # initialize...
     sess.run(tf.global_variables_initializer())
@@ -243,8 +251,8 @@ def main():
         save_path = saver.save(sess, '/tmp/model.ckpt')
         print("Model saved in file: %s" % save_path) 
 
-    test_rewards = test(drqn_a, N_TEST)
-    np.savetxt('test.csv', test_rewards, delimiter=',', fmt='%f')
+    #test_rewards = test(drqn_a, N_TEST)
+    #np.savetxt('test.csv', test_rewards, delimiter=',', fmt='%f')
 
 if __name__ == "__main__":
     main()
