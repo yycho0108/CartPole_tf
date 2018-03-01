@@ -21,8 +21,6 @@ class DRQN(object):
         self._reuse = reuse
         self._build()
 
-        self._tensors = {}
-
     def _arg_scope(self):
         batch_norm_params = {
                 'is_training' : self._is_training,
@@ -35,8 +33,9 @@ class DRQN(object):
                 }
         with slim.arg_scope([slim.fully_connected],
                 activation_fn = tf.nn.elu,
-                normalizer_fn = slim.batch_norm,
-                normalizer_params = batch_norm_params,
+                #normalizer_fn = slim.batch_norm,
+                #normalizer_params = batch_norm_params,
+                # don't use batch norm, for complicated reasons
                 ) as sc:
             return sc
 
@@ -95,7 +94,8 @@ class DRQN(object):
                 #        )
         return c_in, h_in, y, c_out, h_out
 
-    def _build_qn(self, x):
+    def _build_qn(self, x, n_b, n_t):
+        """ Build Q-Network """
         with tf.name_scope('qn', [x]):
             with slim.arg_scope(self._arg_scope()):
                 sa, sv = tf.split(x, 2, axis=1) # split into action-value streams
@@ -105,16 +105,22 @@ class DRQN(object):
                 a_y = tf.argmax(q_y, axis=1)
 
                 # setup targets
+                # TODO : add eval flag to enable creating loss/evaluation targets
                 q_t = tf.placeholder(shape=[None], dtype=tf.float32)
                 a_t = tf.placeholder(shape=[None], dtype=tf.int32)
                 a_t_o = tf.one_hot(a_t, self._n_action, dtype=tf.float32)
 
                 q = tf.reduce_sum(q_y * a_t_o, axis=1)
+
+                m_a = tf.zeros([n_b, n_t//2], dtype=tf.float32)
+                m_b = tf.ones([n_t, n_t//2], dtype=tf.float32)
+                mask = tf.concat([m_a, m_b], 1)
+                mask = tf.reshape(mask, [-1])
+
                 q_err = tf.square(q_t - q)
-                #print q_err.shape #= (batch_sizexn_steps, n_actions)
+                loss = tf.reduce_mean(q_err * mask)
 
-
-        return q_t, a_t, q_y, a_y
+        return q_t, a_t, q_y, a_y, loss
 
 
     def _build(self):
@@ -125,7 +131,7 @@ class DRQN(object):
             #cnn = self._build_cnn(self._inputs)
             fcn = self._build_fcn(x_in)
             c_in, h_in, y, c_out, h_out = self._build_rnn(fcn, batch_size, step_size)
-            q_t, a_t, q_y, a_y = self._build_qn(y)
+            q_t, a_t, q_y, a_y, loss = self._build_qn(y, batch_size, step_size)
 
         # save ; inputs
         self._inputs = {
@@ -142,17 +148,41 @@ class DRQN(object):
                 'c_out' : c_out, # states bookkeeping
                 'h_out' : h_out, # 
                 'q_y' : q_y,     # network q
-                'a_y' : a_y      # network action
+                'a_y' : a_y,      # network action
+                'loss' : loss
                 }
 
-        # tensors lookup
+        # create tensors lookup dictionary
         self._tensors = self._inputs.copy()
         self._tensors.update(self._outputs)
+
+    def __getitem__(self, name):
+        return self._tensors[name]
+
+    def predict(self):
+        return NotImplementedError("DRQN.predict() does not exist yet.")
+
+    def train(self):
+        return NotImplementedError("DRQN.train() does not exist yet.")
+
+    def get_trainable_variables(self):
+        return slim.get_trainable_variables(self._scope)
         
 
 def main():
     # test ...
-    drqn = DRQN([2], 2, 8)
+    drqn_a = DRQN([2], 2, 8, scope='actor')
+    drqn_c = DRQN([2], 2, 8, scope='critic')
+
+    va = drqn_a.get_trainable_variables()
+    vc = drqn_c.get_trainable_variables()
+
+    tau = 0.001
+    copy_ops = [c.assign(a.value()*tau + c.value() * (1.0-tau)) for (a,c) in zip(va,vc)]
+    copy_ops = tf.group(copy_ops)
+
+    print drqn_a['x_in']
+
 
 if __name__ == "__main__":
     main()
