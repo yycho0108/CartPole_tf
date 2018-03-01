@@ -45,6 +45,7 @@ class DRQN(object):
             with slim.arg_scope(self._arg_scope()):
                 # x = (cart position, cart angle) = 2
                 return slim.stack(x, slim.fully_connected, self._hs, scope='fc')
+            # 2  (2x8) 8 (8x32) 32 (32x64) 64 (64x2) 2
 
     def _build_cnn(self, x):
         with tf.name_scope('cnn', [x]):
@@ -54,22 +55,30 @@ class DRQN(object):
     def _build_rnn(self, x, b, s):
         # TODO : treat conv vs. fc differently somehow?
         with tf.name_scope('rnn', [x]):
-            n_h = self._hs[-1] # should be 64
+            n_h = self._hs[-1]
             x = slim.flatten(x) # in case input is conv.
             x = tf.reshape(x, [b, s, n_h])
             with slim.arg_scope(self._arg_scope()):
-                cell = rnn.LSTMCell(n_h, state_is_tuple=True)
-                s0 = cell.zero_state(b, tf.float32) # lstmstatetuple!!?
-                c_in = tf.placeholder_with_default(
-                        s0.c,
-                        s0.c.shape,
-                        name='c_in'
-                        )
-                h_in = tf.placeholder_with_default(
-                        s0.h,
-                        s0.h.shape,
-                        name='h_in'
-                        )
+                cell = rnn.BasicLSTMCell(n_h, state_is_tuple=True)
+                s0 = cell.zero_state(b, tf.float32)
+                #c_in = tf.placeholder_with_default(
+                #        s0.c,
+                #        s0.c.shape,
+                #        name='c_in'
+                #        )
+                #h_in = tf.placeholder_with_default(
+                #        s0.h,
+                #        s0.h.shape,
+                #        name='h_in'
+                #        )
+                c_in = tf.placeholder(
+                        shape = s0.c.shape,
+                        dtype = tf.float32,
+                        name = 'c_in')
+                h_in = tf.placeholder(
+                        shape = s0.h.shape,
+                        dtype = tf.float32,
+                        name = 'h_in')
                 s_in = rnn.LSTMStateTuple(c_in, h_in)
                 y, s_out = tf.nn.dynamic_rnn(
                         inputs=x,
@@ -78,6 +87,7 @@ class DRQN(object):
                         initial_state=s_in,
                         scope='rnn')
                 # y = (batch_size, n_steps, n_actions)
+                #y = y[:,-1,:]
                 y = tf.reshape(y, [-1, n_h])
                 # TODO : why is this ok?
                 # apparently q is computed for each time step as well. hmm
@@ -106,19 +116,19 @@ class DRQN(object):
 
                 # setup targets
                 # TODO : add eval flag to enable creating loss/evaluation targets
-                q_t = tf.placeholder(shape=[None], dtype=tf.float32)
-                a_t = tf.placeholder(shape=[None], dtype=tf.int32)
+                q_t = tf.placeholder(shape=[None], dtype=tf.float32, name='q_t')
+                a_t = tf.placeholder(shape=[None], dtype=tf.int32, name='a_t')
                 a_t_o = tf.one_hot(a_t, self._n_action, dtype=tf.float32)
 
                 q = tf.reduce_sum(q_y * a_t_o, axis=1)
-
-                m_a = tf.zeros([n_b, n_t//2], dtype=tf.float32)
-                m_b = tf.ones([n_t, n_t//2], dtype=tf.float32)
-                mask = tf.concat([m_a, m_b], 1)
-                mask = tf.reshape(mask, [-1])
-
                 q_err = tf.square(q_t - q)
-                loss = tf.reduce_mean(q_err * mask)
+
+                #m_a = tf.zeros([n_b, n_t//2], dtype=tf.float32)
+                #m_b = tf.ones([n_b, n_t//2], dtype=tf.float32)
+                #mask = tf.concat([m_a, m_b], 1)
+                #mask = tf.reshape(mask, [-1])
+                #loss = tf.reduce_mean(q_err * mask)
+                loss = tf.reduce_mean(q_err)
 
         return q_t, a_t, q_y, a_y, loss
 
@@ -126,8 +136,8 @@ class DRQN(object):
     def _build(self):
         with tf.variable_scope(self._scope, reuse=self._reuse):
             x_in = tf.placeholder(tf.float32, shape=[None] + list(self._state_shape), name='x_in')
-            batch_size = tf.placeholder(tf.int32, shape=[])
-            step_size = tf.placeholder(tf.int32, shape=[])
+            batch_size = tf.placeholder(tf.int32, shape=[], name='n_b')
+            step_size = tf.placeholder(tf.int32, shape=[], name='n_t')
             #cnn = self._build_cnn(self._inputs)
             fcn = self._build_fcn(x_in)
             c_in, h_in, y, c_out, h_out = self._build_rnn(fcn, batch_size, step_size)

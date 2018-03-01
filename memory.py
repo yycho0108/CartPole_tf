@@ -39,14 +39,14 @@ class TraceMemory(object):
         n : batch_size
         s : trace length
         """
-        if self.full:
+        if self._full:
             idx = np.random.randint(self._size, size=n)
         else:
             idx = np.random.randint(self._index, size=n)
 
-        ms = self._memory[idx]
         res = []
-        for m in ms:
+        for i in idx:
+            m = self._memory[i]
             i0 = np.random.randint(0, len(m)+1-s)
             res.append(m[i0:i0+s])
 

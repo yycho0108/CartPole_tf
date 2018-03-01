@@ -1,5 +1,7 @@
 # Created by https://www.gitignore.io/api/vim,python,linux,git
 
+data/
+
 ### Vim ###
 # swap
 [._]*.s[a-w][a-z]
