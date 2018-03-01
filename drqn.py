@@ -123,12 +123,12 @@ class DRQN(object):
                 q = tf.reduce_sum(q_y * a_t_o, axis=1)
                 q_err = tf.square(q_t - q)
 
-                #m_a = tf.zeros([n_b, n_t//2], dtype=tf.float32)
-                #m_b = tf.ones([n_b, n_t//2], dtype=tf.float32)
-                #mask = tf.concat([m_a, m_b], 1)
-                #mask = tf.reshape(mask, [-1])
-                #loss = tf.reduce_mean(q_err * mask)
-                loss = tf.reduce_mean(q_err)
+                m_a = tf.zeros([n_b, n_t//2], dtype=tf.float32)
+                m_b = tf.ones([n_b, n_t//2], dtype=tf.float32)
+                mask = tf.concat([m_a, m_b], 1)
+                mask = tf.reshape(mask, [-1])
+                loss = tf.reduce_mean(q_err * mask)
+                #loss = tf.reduce_mean(q_err)
 
         return q_t, a_t, q_y, a_y, loss
 

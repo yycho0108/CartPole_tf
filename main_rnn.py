@@ -44,7 +44,7 @@ LEARNING_RATE = 5e-4
 GAMMA = .99 #Discount factor.
 N_EPOCH = np.inf #20000 #Total number of episodes to train network for.
 N_TEST = 200 #Total number of episodes to train network for.
-TAU = 1e-3#(1.0/100) * U_FREQ #Amount to update target network at each step.
+TAU = 1e-3 #(1.0/100) * U_FREQ #Amount to update target network at each step.
 
 # Annealing Parameters
 EPS_INIT  = 1.00 #Starting chance of random action
@@ -201,15 +201,28 @@ def test(net, episodes):
     rewards = []
 
     # test
+    c0 = np.zeros([1, N_H])
+    h0 = np.zeros([1, N_H])
+
     for i in range(episodes):
         s = env.reset()
         d = False
         net_reward = 0
+        c = c0.copy()
+        h = h0.copy()
+
         while not d and net_reward < 200:
             env.render()
-            a = sess.run(net.predict, feed_dict={net.inputs:[s]})
-            a = a[0]
-            s,r,d,_ = env.step(a)
+            x = np.expand_dims(proc(s), 0)
+            a, c, h = sess.run([net['a_y'], net['c_out'], net['h_out']],
+                    feed_dict={
+                        net['x_in'] : x,
+                        net['c_in'] : c,
+                        net['h_in'] : h,
+                        net['n_b'] : 1,
+                        net['n_t'] : 1
+                        })
+            s,r,d,_ = env.step(a[0])
             net_reward += r
         rewards.append(net_reward)
     return rewards
@@ -251,8 +264,8 @@ def main():
         save_path = saver.save(sess, '/tmp/model.ckpt')
         print("Model saved in file: %s" % save_path) 
 
-    #test_rewards = test(drqn_a, N_TEST)
-    #np.savetxt('test.csv', test_rewards, delimiter=',', fmt='%f')
+    test_rewards = test(drqn_a, N_TEST)
+    np.savetxt('test.csv', test_rewards, delimiter=',', fmt='%f')
 
 if __name__ == "__main__":
     main()
