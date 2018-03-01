@@ -264,8 +264,8 @@ def main():
         save_path = saver.save(sess, '/tmp/model.ckpt')
         print("Model saved in file: %s" % save_path) 
 
-    test_rewards = test(drqn_a, N_TEST)
-    np.savetxt('test.csv', test_rewards, delimiter=',', fmt='%f')
+    #test_rewards = test(drqn_a, N_TEST)
+    #np.savetxt('test.csv', test_rewards, delimiter=',', fmt='%f')
 
 if __name__ == "__main__":
     main()

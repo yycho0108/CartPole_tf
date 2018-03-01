@@ -89,8 +89,6 @@ class DRQN(object):
                 # y = (batch_size, n_steps, n_actions)
                 #y = y[:,-1,:]
                 y = tf.reshape(y, [-1, n_h])
-                # TODO : why is this ok?
-                # apparently q is computed for each time step as well. hmm
 
                 c_out = s_out.c
                 h_out = s_out.h
@@ -109,8 +107,8 @@ class DRQN(object):
         with tf.name_scope('qn', [x]):
             with slim.arg_scope(self._arg_scope()):
                 sa, sv = tf.split(x, 2, axis=1) # split into action-value streams
-                adv = slim.fully_connected(sa, self._n_action, scope='adv')
-                val = slim.fully_connected(sv, 1, scope='val')
+                adv = slim.fully_connected(sa, self._n_action, scope='adv', activation_fn=None)
+                val = slim.fully_connected(sv, 1, scope='val', activation_fn=None)
                 q_y = val + (adv - tf.reduce_mean(adv, axis=1, keepdims=True))
                 a_y = tf.argmax(q_y, axis=1)
 
@@ -123,6 +121,7 @@ class DRQN(object):
                 q = tf.reduce_sum(q_y * a_t_o, axis=1)
                 q_err = tf.square(q_t - q)
 
+                # only the latter-half steps will be counted for loss ...
                 m_a = tf.zeros([n_b, n_t//2], dtype=tf.float32)
                 m_b = tf.ones([n_b, n_t//2], dtype=tf.float32)
                 mask = tf.concat([m_a, m_b], 1)
@@ -190,8 +189,6 @@ def main():
     tau = 0.001
     copy_ops = [c.assign(a.value()*tau + c.value() * (1.0-tau)) for (a,c) in zip(va,vc)]
     copy_ops = tf.group(copy_ops)
-
-    print drqn_a['x_in']
 
 
 if __name__ == "__main__":
