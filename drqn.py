@@ -3,6 +3,13 @@ import numpy as np
 from tensorflow.contrib import rnn
 from tensorflow.contrib import slim
 
+def huber_loss(y, t, delta=1.0):
+    with tf.name_scope('huber_loss', [y, t]):
+        err = tf.abs(y - t)
+        q = tf.minimum(err, delta)
+        return 0.5 * tf.square(q) + delta * (err - q)
+
+
 class DRQN(object):
     def __init__(self,
             state_shape,
@@ -119,7 +126,8 @@ class DRQN(object):
                 a_t_o = tf.one_hot(a_t, self._n_action, dtype=tf.float32)
 
                 q = tf.reduce_sum(q_y * a_t_o, axis=1)
-                q_err = tf.square(q_t - q)
+                q_err = huber_loss(q, q_t)
+                #q_err = tf.square(q_t - q)
 
                 # only the latter-half steps will be counted for loss ...
                 m_a = tf.zeros([n_b, n_t//2], dtype=tf.float32)
@@ -127,6 +135,8 @@ class DRQN(object):
                 mask = tf.concat([m_a, m_b], 1)
                 mask = tf.reshape(mask, [-1])
                 loss = tf.reduce_mean(q_err * mask)
+                #loss = huber_loss(loss)
+
                 #loss = tf.reduce_mean(q_err)
 
         return q_t, a_t, q_y, a_y, loss
