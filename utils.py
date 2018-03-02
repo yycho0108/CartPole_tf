@@ -42,6 +42,8 @@ class StopRequest(object):
         signal.signal(signal.SIGINT, self.sig_cb)
     def start(self):
         self._start = True
+    def stop(self):
+        self._start = False
     def sig_cb(self, signal, frame):
         self._stop = True
         if not self._start:

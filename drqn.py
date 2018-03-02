@@ -21,7 +21,7 @@ class DRQN(object):
         self._state_shape = state_shape
         self._n_action = n_action
         self._n_steps = n_steps
-        self._hs = [8, 32, 64] # currently not configurable
+        self._hs = [64] # currently not configurable
         self._scope = scope
         self._data_format = data_format
         self._is_training = is_training
@@ -52,7 +52,6 @@ class DRQN(object):
             with slim.arg_scope(self._arg_scope()):
                 # x = (cart position, cart angle) = 2
                 return slim.stack(x, slim.fully_connected, self._hs, scope='fc')
-            # 2  (2x8) 8 (8x32) 32 (32x64) 64 (64x2) 2
 
     def _build_cnn(self, x):
         with tf.name_scope('cnn', [x]):
