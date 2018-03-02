@@ -36,24 +36,24 @@ N_BATCH = 32 # size of training batch
 N_TRACE = 8
 
 ## Learning Rate Parameters
-LR_MAX = 1e-4
+LR_MAX = 5e-4
 LR_MIN = 1e-5
 LR_DECAY_STEPS = 800000
 
 ## Q-Learning Parameters
-GAMMA = .99 #Discount factor.
+GAMMA = .9999 #Discount factor.
 N_EPOCH = np.inf #20000 #Total number of episodes to train network for.
 N_TEST = 200 #Total number of episodes to train network for.
 TAU = 1e-3#1e-3 #(1.0/100) * U_FREQ #Amount to update target network at each step.
 
 # Exploration Parameters
 EPS_INIT  = 1.00 #Starting chance of random action
-EPS_MIN  = 0.01 #Final chance of random action
-N_ANNEAL = 400000 #How many steps of training to reduce startE to endE.
+EPS_MIN  = 0.05 #Final chance of random action
+N_ANNEAL = 600000 #How many steps of training to reduce startE to endE.
 EPS_DECAY = EPS_MIN ** (1.0/N_ANNEAL)
 #EPS_DECAY = 0.9999
 
-N_PRE = 5000 #Number of steps, pre-train
+N_PRE = 50000 #Number of steps, pre-train
 N_MEM = 100000
 
 def proc(x):
@@ -91,7 +91,6 @@ class DRQNMain(object):
         with tf.name_scope('train'):
             tf_step = tf.Variable(0, trainable=False)
             lr = tf.maximum(tf.train.exponential_decay(LR_MAX, tf_step, LR_DECAY_STEPS, LR_MIN/LR_MAX), LR_MIN)
-            tf.summary.scalar('learning_rate', lr)
             trainer = tf.train.AdamOptimizer(learning_rate=lr)
             train_ops = trainer.minimize(
                     drqn_a['loss'],
@@ -99,7 +98,11 @@ class DRQNMain(object):
                     )
         graph = tf.get_default_graph()    
         writer = tf.summary.FileWriter(os.path.join(self._dirs['run_log_root'], 'train'), graph)
-        tf.summary.scalar('loss', drqn_a['loss'])
+        with tf.name_scope('logs'):
+            tf.summary.scalar('learning_rate', lr)
+            tf.summary.scalar('q', tf.reduce_mean(drqn_a['q']))
+            tf.summary.scalar('q_t', tf.reduce_mean(drqn_a['q_t']))
+            tf.summary.scalar('loss', drqn_a['loss'])
         summary = tf.summary.merge_all()
         saver = tf.train.Saver()
         
@@ -149,6 +152,8 @@ class DRQNMain(object):
 
         a, c, h = self.act(s0, c, h)
         s1, r, d, _ = env.step(a)
+        r = np.cos(4*s1[2])#xvtw
+        # TODO : engineered reward! danger.
         s1 = proc(s1)
         self._step += 1
         return s1, a, r, d, c, h
@@ -267,49 +272,60 @@ class DRQNMain(object):
         sig.stop() # i.e. stop handling signals
         return rewards
 
-    def save(self, path='/tmp/model.ckpt'):
+    def test(self, n):
+        """ test for n episodes """
+        env = self._env
+        net = self._drqn_a
+
+        rewards = []
+        c0 = np.zeros([1, N_H])
+        h0 = np.zeros([1, N_H])
+        sig = StopRequest()
+        sig.start()
+
+        for i in range(n):
+            if sig._stop:
+                break
+            print i
+
+            s = env.reset()
+            d = False
+            net_reward = 0
+            c = c0.copy()
+            h = h0.copy()
+
+            while not d and net_reward < 200:
+                env.render()
+                x = np.expand_dims(proc(s), 0)
+                a, c, h = self.run([net['a_y'], net['c_out'], net['h_out']],
+                        feed_dict={
+                            net['x_in'] : x,
+                            net['c_in'] : c,
+                            net['h_in'] : h,
+                            net['n_b'] : 1,
+                            net['n_t'] : 1
+                            })
+                s,r,d,_ = env.step(a[0])
+                net_reward += r
+            rewards.append(net_reward)
+
+        sig.stop()
+        return rewards
+
+
+    def save(self):
+        path = self._dirs['output_ckpt']
         save_path = self._saver.save(self._sess, path)
         print("Model saved in file: %s" % save_path)
 
     def load(self, path='/tmp/model.ckpt'):
         ## TODO : actually not ignore path
-        self._saver.restore(sess, path)
+        self._saver.restore(self._sess, path)
 
     def run(self, *args, **kwargs):
         return self._sess.run(*args, **kwargs)
 
-def test(net, episodes):
-    rewards = []
-
-    # test
-    c0 = np.zeros([1, N_H])
-    h0 = np.zeros([1, N_H])
-
-    for i in range(episodes):
-        s = env.reset()
-        d = False
-        net_reward = 0
-        c = c0.copy()
-        h = h0.copy()
-
-        while not d and net_reward < 200:
-            env.render()
-            x = np.expand_dims(proc(s), 0)
-            a, c, h = sess.run([net['a_y'], net['c_out'], net['h_out']],
-                    feed_dict={
-                        net['x_in'] : x,
-                        net['c_in'] : c,
-                        net['h_in'] : h,
-                        net['n_b'] : 1,
-                        net['n_t'] : 1
-                        })
-            s,r,d,_ = env.step(a[0])
-            net_reward += r
-        rewards.append(net_reward)
-    return rewards
-
 def main():
-
     gym.envs.register(
             id='CartPole-v0500',
             entry_point='gym.envs.classic_control:CartPoleEnv',
@@ -328,11 +344,10 @@ def main():
         #train_rewards = train(drqn_a, drqn_c, memory, N_EPOCH, copy_ops, train_ops, tf_step)
         train_rewards = app.train(N_EPOCH)
         np.savetxt('train.csv', train_rewards, delimiter=',', fmt='%f')
-        save_path = app.save('/tmp/model.ckpt')
-        print("Model saved in file: %s" % save_path) 
+        app.save()
 
-    #test_rewards = test(drqn_a, N_TEST)
-    #np.savetxt('test.csv', test_rewards, delimiter=',', fmt='%f')
+    test_rewards = app.test(N_TEST)
+    np.savetxt('test.csv', test_rewards, delimiter=',', fmt='%f')
 
 if __name__ == "__main__":
     main()

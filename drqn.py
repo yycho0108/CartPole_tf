@@ -9,7 +9,6 @@ def huber_loss(y, t, delta=1.0):
         q = tf.minimum(err, delta)
         return 0.5 * tf.square(q) + delta * (err - q)
 
-
 class DRQN(object):
     def __init__(self,
             state_shape,
@@ -21,7 +20,7 @@ class DRQN(object):
         self._state_shape = state_shape
         self._n_action = n_action
         self._n_steps = n_steps
-        self._hs = [64] # currently not configurable
+        self._hs = [32,64] # currently not configurable
         self._scope = scope
         self._data_format = data_format
         self._is_training = is_training
@@ -50,13 +49,12 @@ class DRQN(object):
         # [batch_size, 2] -> [batch_size, 64]
         with tf.name_scope('fcn', [x]):
             with slim.arg_scope(self._arg_scope()):
-                # x = (cart position, cart angle) = 2
                 return slim.stack(x, slim.fully_connected, self._hs, scope='fc')
 
     def _build_cnn(self, x):
         with tf.name_scope('cnn', [x]):
             with slim.arg_scope(self._arg_scope()):
-                pass
+                return NotImplementedError("CNN Not Supported Yet!")
 
     def _build_rnn(self, x, b, s):
         # TODO : treat conv vs. fc differently somehow?
@@ -67,16 +65,6 @@ class DRQN(object):
             with slim.arg_scope(self._arg_scope()):
                 cell = rnn.BasicLSTMCell(n_h, state_is_tuple=True)
                 s0 = cell.zero_state(b, tf.float32)
-                #c_in = tf.placeholder_with_default(
-                #        s0.c,
-                #        s0.c.shape,
-                #        name='c_in'
-                #        )
-                #h_in = tf.placeholder_with_default(
-                #        s0.h,
-                #        s0.h.shape,
-                #        name='h_in'
-                #        )
                 c_in = tf.placeholder(
                         shape = s0.c.shape,
                         dtype = tf.float32,
@@ -134,11 +122,9 @@ class DRQN(object):
                 mask = tf.concat([m_a, m_b], 1)
                 mask = tf.reshape(mask, [-1])
                 loss = tf.reduce_mean(q_err * mask)
-                #loss = huber_loss(loss)
-
                 #loss = tf.reduce_mean(q_err)
 
-        return q_t, a_t, q_y, a_y, loss
+        return q, q_t, a_t, q_y, a_y, loss
 
 
     def _build(self):
@@ -149,7 +135,7 @@ class DRQN(object):
             #cnn = self._build_cnn(self._inputs)
             fcn = self._build_fcn(x_in)
             c_in, h_in, y, c_out, h_out = self._build_rnn(fcn, batch_size, step_size)
-            q_t, a_t, q_y, a_y, loss = self._build_qn(y, batch_size, step_size)
+            q, q_t, a_t, q_y, a_y, loss = self._build_qn(y, batch_size, step_size)
 
         # save ; inputs
         self._inputs = {
@@ -165,6 +151,7 @@ class DRQN(object):
                 'y' : y, # rnn output
                 'c_out' : c_out, # states bookkeeping
                 'h_out' : h_out, # 
+                'q' : q,
                 'q_y' : q_y,     # network q
                 'a_y' : a_y,      # network action
                 'loss' : loss
