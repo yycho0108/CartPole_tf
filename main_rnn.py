@@ -3,7 +3,7 @@
 main_rnn.py
 
 @Author : Yoonyoung Cho
-@Date : 02/25/2018
+@Date : 03/02/2018
 
 Description : 
     Modification of main.py to run CartPole with recurrent neural networks (LSTMs)
@@ -11,8 +11,7 @@ Description :
     Note that the CartPole model does not receive velocity-related data as input, meaning that it should learn to model the system motion.
 
 Notes : 
-    Still modifying train()
-    None of the code below that will work.
+    Currently the expeirments **do** receive velocity-related input.
 """
 
 from utils import *
