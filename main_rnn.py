@@ -24,6 +24,7 @@ import tensorflow as tf
 
 from memory import TraceMemory
 from drqn import DRQN
+import argparse
 
 ## Network/Meta Parameters
 N_X = 4 # size of input
@@ -33,11 +34,12 @@ U_FREQ = 8 # update frequency
 N_LOG = 16
 N_BATCH = 32 # size of training batch
 N_TRACE = 8
+HS = [32, 64]
 
 ## Learning Rate Parameters
 LR_MAX = 5e-4
 LR_MIN = 1e-5
-LR_DECAY_STEPS = 800000
+LR_DECAY_STEPS = 8000000
 
 ## Q-Learning Parameters
 GAMMA = .9999 #Discount factor.
@@ -46,14 +48,39 @@ N_TEST = 200 #Total number of episodes to train network for.
 TAU = 1e-3#1e-3 #(1.0/100) * U_FREQ #Amount to update target network at each step.
 
 # Exploration Parameters
-EPS_INIT  = 1.00 #Starting chance of random action
-EPS_MIN  = 0.05 #Final chance of random action
-N_ANNEAL = 600000 #How many steps of training to reduce startE to endE.
-EPS_DECAY = EPS_MIN ** (1.0/N_ANNEAL)
+EPS_INIT  = 0.95 #Starting chance of random action
+EPS_MIN  = 0.03 #Final chance of random action
+EPS_ANNEAL = 600000 #How many steps of training to reduce startE to endE.
+EPS_DECAY = EPS_MIN ** (1.0/EPS_ANNEAL)
 #EPS_DECAY = 0.9999
 
 N_PRE = 50000 #Number of steps, pre-train
-N_MEM = 100000
+N_MEM = 100000 # ~5000 episodes
+
+GAME_STEPS = 999
+
+PARAMS = {
+        'N_X' : N_X,
+        'N_A' : N_A,
+        'N_H' : N_H,
+        'U_FREQ' : U_FREQ,
+        'N_BATCH' : N_BATCH,
+        'N_TRACE' : N_TRACE,
+        'LR_MAX' : LR_MAX,
+        'LR_MIN' : LR_MIN,
+        'LR_DECAY_STEPS' : LR_DECAY_STEPS,
+        'GAMMA' : GAMMA,
+        'N_EPOCH' : N_EPOCH,
+        'N_TEST' : N_TEST,
+        'TAU' : TAU,
+        'EPS_INIT' : EPS_INIT,
+        'EPS_MIN' : EPS_MIN,
+        'EPS_ANNEAL' : EPS_ANNEAL,
+        'EPS_DECAY' : EPS_DECAY,
+        'N_PRE' : N_PRE,
+        'N_MEM' : N_MEM,
+        'HS' : HS
+        }
 
 def proc(x):
     # remove velocity information
@@ -65,7 +92,7 @@ def proc(x):
 class DRQNMain(object):
     def __init__(self, env):
         self._env = env
-        self._dirs = directory_setup('drqn')
+        self._dirs = directory_setup('drqn', **PARAMS)
         self._build()
 
         self._sess = tf.Session()
@@ -74,8 +101,8 @@ class DRQNMain(object):
     def _build(self):
         tf.reset_default_graph()
         # setup ... 
-        drqn_a = DRQN([N_X], N_A, N_TRACE, scope='actor')
-        drqn_c = DRQN([N_X], N_A, N_TRACE, scope='critic')
+        drqn_a = DRQN([N_X], N_A, N_TRACE, hs=HS, scope='actor')
+        drqn_c = DRQN([N_X], N_A, N_TRACE, hs=HS, scope='critic')
         memory = TraceMemory(size=N_MEM)
 
         # critic-update ...
@@ -151,7 +178,9 @@ class DRQNMain(object):
 
         a, c, h = self.act(s0, c, h)
         s1, r, d, _ = env.step(a)
-        r = np.cos(4*s1[2])#xvtw
+        r = float(r)
+        #r /= 100.0
+        #r = np.cos(4*s1[2]) / 100.0#xvtw
         # TODO : engineered reward! danger.
         s1 = proc(s1)
         self._step += 1
@@ -252,7 +281,7 @@ class DRQNMain(object):
 
         while not sig._stop:
             # TODO : hardcoded max_step
-            net_reward, entry = self.train_1(c0, h0, 500)
+            net_reward, entry = self.train_1(c0, h0, GAME_STEPS-1)
             self._memory.add(np.asarray(entry))
 
             self._writer.add_summary(tf.Summary(value=[tf.Summary.Value(
@@ -285,7 +314,6 @@ class DRQNMain(object):
         for i in range(n):
             if sig._stop:
                 break
-            print i
 
             s = env.reset()
             d = False
@@ -293,7 +321,7 @@ class DRQNMain(object):
             c = c0.copy()
             h = h0.copy()
 
-            while not d and net_reward < 200:
+            while not d and net_reward < 999:
                 env.render()
                 x = np.expand_dims(proc(s), 0)
                 a, c, h = self.run([net['a_y'], net['c_out'], net['h_out']],
@@ -306,6 +334,9 @@ class DRQNMain(object):
                             })
                 s,r,d,_ = env.step(a[0])
                 net_reward += r
+
+            print i, net_reward
+
             rewards.append(net_reward)
 
         sig.stop()
@@ -320,33 +351,46 @@ class DRQNMain(object):
     def load(self, path='/tmp/model.ckpt'):
         ## TODO : actually not ignore path
         self._saver.restore(self._sess, path)
+        print("Model loaded from file: %s" % path)
 
     def run(self, *args, **kwargs):
         return self._sess.run(*args, **kwargs)
 
-def main():
+def str2bool(v):
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
+def main(opts):
     gym.envs.register(
-            id='CartPole-v0500',
+            id='CartPole-v0999',
             entry_point='gym.envs.classic_control:CartPoleEnv',
-            tags={'wrapper_config.TimeLimit.max_episode_steps': 500},
-            reward_threshold=475.0,
+            tags={'wrapper_config.TimeLimit.max_episode_steps': GAME_STEPS},
+            reward_threshold=float(GAME_STEPS)-1.0,
             )
-    env = gym.make('CartPole-v0500')
+    env = gym.make('CartPole-v0999')
     app = DRQNMain(env)
 
-    if len(sys.argv) > 1 and sys.argv[1].lower() == 'load':
+    if opts.load:
         # load
-        app.load('/tmp/model.ckpt')
-        print '[loaded]'
-    else:
+        app.load(opts.load)
+
+    if opts.train:
         # train
-        #train_rewards = train(drqn_a, drqn_c, memory, N_EPOCH, copy_ops, train_ops, tf_step)
         train_rewards = app.train(N_EPOCH)
         np.savetxt('train.csv', train_rewards, delimiter=',', fmt='%f')
         app.save()
 
-    test_rewards = app.test(N_TEST)
-    np.savetxt('test.csv', test_rewards, delimiter=',', fmt='%f')
+    if opts.test:
+        test_rewards = app.test(N_TEST)
+        np.savetxt('test.csv', test_rewards, delimiter=',', fmt='%f')
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description='Run DRQN on Cartpole.')
+    parser.add_argument('--load', type=str, default='')
+    parser.add_argument('--train', type=str2bool, default=True)
+    parser.add_argument('--test', type=str2bool, default=True)
+    main(parser.parse_args())

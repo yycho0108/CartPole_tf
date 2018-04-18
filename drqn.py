@@ -9,18 +9,20 @@ def huber_loss(y, t, delta=1.0):
         q = tf.minimum(err, delta)
         return 0.5 * tf.square(q) + delta * (err - q)
 
+
 class DRQN(object):
     def __init__(self,
             state_shape,
             n_action,
             n_steps,
+            hs=[32,64],
             scope='drqn', data_format='NCHW',
             is_training=True, reuse=None
             ):
         self._state_shape = state_shape
         self._n_action = n_action
         self._n_steps = n_steps
-        self._hs = [32,64] # currently not configurable
+        self._hs = hs # currently not configurable
         self._scope = scope
         self._data_format = data_format
         self._is_training = is_training
@@ -65,14 +67,17 @@ class DRQN(object):
             with slim.arg_scope(self._arg_scope()):
                 cell = rnn.BasicLSTMCell(n_h, state_is_tuple=True)
                 s0 = cell.zero_state(b, tf.float32)
-                c_in = tf.placeholder(
-                        shape = s0.c.shape,
-                        dtype = tf.float32,
-                        name = 'c_in')
-                h_in = tf.placeholder(
-                        shape = s0.h.shape,
-                        dtype = tf.float32,
-                        name = 'h_in')
+                print s0
+                c_in = s0.c
+                h_in = s0.h
+                #c_in = tf.placeholder(
+                #        shape = s0.c.shape,
+                #        dtype = tf.float32,
+                #        name = 'c_in')
+                #h_in = tf.placeholder(
+                #        shape = s0.h.shape,
+                #        dtype = tf.float32,
+                #        name = 'h_in')
                 s_in = rnn.LSTMStateTuple(c_in, h_in)
                 y, s_out = tf.nn.dynamic_rnn(
                         inputs=x,
@@ -113,8 +118,8 @@ class DRQN(object):
                 a_t_o = tf.one_hot(a_t, self._n_action, dtype=tf.float32)
 
                 q = tf.reduce_sum(q_y * a_t_o, axis=1)
-                q_err = huber_loss(q, q_t)
-                #q_err = tf.square(q_t - q)
+                #q_err = huber_loss(q, q_t)# / tf.square(tf.reduce_mean(q_t))
+                q_err = tf.square(q_t-q)
 
                 # only the latter-half steps will be counted for loss ...
                 m_a = tf.zeros([n_b, n_t//2], dtype=tf.float32)
@@ -126,6 +131,11 @@ class DRQN(object):
 
         return q, q_t, a_t, q_y, a_y, loss
 
+    #def _popart(self, y, t):
+    #    with tf.name_scope('popart', [y,t]):
+    #        t_n = tf.matmul(tf.inv(sigma), y - mu)
+    #        # y = [n_b]
+    #        #W = tf.eye(...)
 
     def _build(self):
         with tf.variable_scope(self._scope, reuse=self._reuse):
