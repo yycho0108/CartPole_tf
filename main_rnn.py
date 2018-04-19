@@ -27,35 +27,35 @@ from drqn import DRQN
 import argparse
 
 ## Network/Meta Parameters
+HS = [64]
 N_X = 4 # size of input
 N_A = 2 # size of action
-N_H = 64 # number of hidden units
+N_H = HS[-1]# number of hidden units
 U_FREQ = 8 # update frequency
 N_LOG = 16
 N_BATCH = 32 # size of training batch
-N_TRACE = 8
-HS = [32, 64]
+N_TRACE = 1
 
 ## Learning Rate Parameters
-LR_MAX = 5e-4
+LR_MAX = 1e-4
 LR_MIN = 1e-5
-LR_DECAY_STEPS = 8000000
+LR_DECAY_STEPS = 200000
 
 ## Q-Learning Parameters
-GAMMA = .9999 #Discount factor.
+GAMMA = .99 #Discount factor.
 N_EPOCH = np.inf #20000 #Total number of episodes to train network for.
 N_TEST = 200 #Total number of episodes to train network for.
 TAU = 1e-3#1e-3 #(1.0/100) * U_FREQ #Amount to update target network at each step.
 
 # Exploration Parameters
-EPS_INIT  = 0.95 #Starting chance of random action
-EPS_MIN  = 0.03 #Final chance of random action
-EPS_ANNEAL = 600000 #How many steps of training to reduce startE to endE.
+EPS_INIT  = 1.0 #Starting chance of random action
+EPS_MIN  = 0.05 #Final chance of random action
+EPS_ANNEAL = 200000 #How many steps of training to reduce startE to endE.
 EPS_DECAY = EPS_MIN ** (1.0/EPS_ANNEAL)
 #EPS_DECAY = 0.9999
 
 N_PRE = 50000 #Number of steps, pre-train
-N_MEM = 100000 # ~5000 episodes
+N_MEM = 10000 # ~5000 episodes
 
 GAME_STEPS = 999
 
@@ -129,6 +129,7 @@ class DRQNMain(object):
             tf.summary.scalar('q', tf.reduce_mean(drqn_a['q']))
             tf.summary.scalar('q_t', tf.reduce_mean(drqn_a['q_t']))
             tf.summary.scalar('loss', drqn_a['loss'])
+            tf.summary.scalar('q_s', drqn_a['q_s'])
         summary = tf.summary.merge_all()
         saver = tf.train.Saver()
         
@@ -180,7 +181,7 @@ class DRQNMain(object):
         s1, r, d, _ = env.step(a)
         r = float(r)
         #r /= 100.0
-        #r = np.cos(4*s1[2]) / 100.0#xvtw
+        r = np.cos(5*s1[2])#xvtw
         # TODO : engineered reward! danger.
         s1 = proc(s1)
         self._step += 1
@@ -281,7 +282,7 @@ class DRQNMain(object):
 
         while not sig._stop:
             # TODO : hardcoded max_step
-            net_reward, entry = self.train_1(c0, h0, GAME_STEPS-1)
+            net_reward, entry = self.train_1(c0, h0, GAME_STEPS-2)
             self._memory.add(np.asarray(entry))
 
             self._writer.add_summary(tf.Summary(value=[tf.Summary.Value(
@@ -372,6 +373,15 @@ def main(opts):
             reward_threshold=float(GAME_STEPS)-1.0,
             )
     env = gym.make('CartPole-v0999')
+    env.reset()
+
+    #while True:
+    #    env.render()
+    #    s1, r, d, k = env.step(0)
+    #    print d
+    #    if d:
+    #        env.reset()
+
     app = DRQNMain(env)
 
     if opts.load:
@@ -392,5 +402,5 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Run DRQN on Cartpole.')
     parser.add_argument('--load', type=str, default='')
     parser.add_argument('--train', type=str2bool, default=True)
-    parser.add_argument('--test', type=str2bool, default=True)
+    parser.add_argument('--test', type=str2bool, default=False)
     main(parser.parse_args())

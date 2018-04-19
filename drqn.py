@@ -41,6 +41,7 @@ class DRQN(object):
                 }
         with slim.arg_scope([slim.fully_connected],
                 activation_fn = tf.nn.elu,
+                #weights_regularizer=slim.l2_regularizer(1e-4)
                 #normalizer_fn = slim.batch_norm,
                 #normalizer_params = batch_norm_params,
                 # don't use batch norm, for complicated reasons
@@ -67,17 +68,16 @@ class DRQN(object):
             with slim.arg_scope(self._arg_scope()):
                 cell = rnn.BasicLSTMCell(n_h, state_is_tuple=True)
                 s0 = cell.zero_state(b, tf.float32)
-                print s0
-                c_in = s0.c
-                h_in = s0.h
-                #c_in = tf.placeholder(
-                #        shape = s0.c.shape,
-                #        dtype = tf.float32,
-                #        name = 'c_in')
-                #h_in = tf.placeholder(
-                #        shape = s0.h.shape,
-                #        dtype = tf.float32,
-                #        name = 'h_in')
+                #c_in = s0.c
+                #h_in = s0.h
+                c_in = tf.placeholder(
+                        shape = s0.c.shape,
+                        dtype = tf.float32,
+                        name = 'c_in')
+                h_in = tf.placeholder(
+                        shape = s0.h.shape,
+                        dtype = tf.float32,
+                        name = 'h_in')
                 s_in = rnn.LSTMStateTuple(c_in, h_in)
                 y, s_out = tf.nn.dynamic_rnn(
                         inputs=x,
@@ -110,26 +110,40 @@ class DRQN(object):
                 val = slim.fully_connected(sv, 1, scope='val', activation_fn=None)
                 q_y = val + (adv - tf.reduce_mean(adv, axis=1, keepdims=True))
                 a_y = tf.argmax(q_y, axis=1)
+        return q_y, a_y
 
-                # setup targets
-                # TODO : add eval flag to enable creating loss/evaluation targets
-                q_t = tf.placeholder(shape=[None], dtype=tf.float32, name='q_t')
-                a_t = tf.placeholder(shape=[None], dtype=tf.int32, name='a_t')
-                a_t_o = tf.one_hot(a_t, self._n_action, dtype=tf.float32)
+    def _build_loss(self, q_y, a_y, n_b, n_t):
+        with tf.name_scope('err', [q_y, a_y]):
+            # setup targets
+            # TODO : add eval flag to enable creating loss/evaluation targets
+            q_t = tf.placeholder(shape=[None], dtype=tf.float32, name='q_t')
+            a_t = tf.placeholder(shape=[None], dtype=tf.int32, name='a_t')
+            a_t_o = tf.one_hot(a_t, self._n_action, dtype=tf.float32)
 
-                q = tf.reduce_sum(q_y * a_t_o, axis=1)
-                #q_err = huber_loss(q, q_t)# / tf.square(tf.reduce_mean(q_t))
-                q_err = tf.square(q_t-q)
+            q = tf.reduce_sum(q_y * a_t_o, axis=1)
 
-                # only the latter-half steps will be counted for loss ...
-                m_a = tf.zeros([n_b, n_t//2], dtype=tf.float32)
-                m_b = tf.ones([n_b, n_t//2], dtype=tf.float32)
-                mask = tf.concat([m_a, m_b], 1)
-                mask = tf.reshape(mask, [-1])
-                loss = tf.reduce_mean(q_err * mask)
-                #loss = tf.reduce_mean(q_err)
+            # OPT1 . relative error
+            q_s = tf.Variable(initial_value=1.0, trainable=False)
+            q_t_s = tf.reduce_mean(q_t)
+            q_s_decay = 0.99
 
-        return q, q_t, a_t, q_y, a_y, loss
+            with tf.control_dependencies([q_s.assign(q_s*q_s_decay + q_t_s*(1.0-q_s_decay))]):
+                q_n = q / q_s
+                q_t_n = q_t / q_s
+                q_err = huber_loss(q_n, q_t_n)
+
+            # OPT2 . absolute error
+            #q_err = huber_loss(q, q_t)# / tf.square(tf.reduce_mean(q_t))
+            #q_err = tf.square(q_t-q)
+
+            # only the latter-half steps will be counted for loss ...
+            n_mask = tf.maximum(n_t//2, 1)
+            m_a = tf.zeros([n_b, n_t - n_mask], dtype=tf.float32)
+            m_b = tf.ones([n_b, n_mask], dtype=tf.float32)
+            mask = tf.concat([m_a, m_b], 1)
+            mask = tf.reshape(mask, [-1])
+            loss = tf.reduce_mean(q_err * mask)
+        return q, q_t, a_t, loss, q_s
 
     #def _popart(self, y, t):
     #    with tf.name_scope('popart', [y,t]):
@@ -145,7 +159,9 @@ class DRQN(object):
             #cnn = self._build_cnn(self._inputs)
             fcn = self._build_fcn(x_in)
             c_in, h_in, y, c_out, h_out = self._build_rnn(fcn, batch_size, step_size)
-            q, q_t, a_t, q_y, a_y, loss = self._build_qn(y, batch_size, step_size)
+            q_y, a_y = self._build_qn(y, batch_size, step_size)
+            q, q_t, a_t, loss, q_s = self._build_loss(q_y, a_y, batch_size, step_size)
+
 
         # save ; inputs
         self._inputs = {
@@ -164,7 +180,8 @@ class DRQN(object):
                 'q' : q,
                 'q_y' : q_y,     # network q
                 'a_y' : a_y,      # network action
-                'loss' : loss
+                'loss' : loss,
+                'q_s' : q_s
                 }
 
         # create tensors lookup dictionary
