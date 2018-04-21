@@ -122,27 +122,44 @@ class DRQN(object):
 
             q = tf.reduce_sum(q_y * a_t_o, axis=1)
 
-            # OPT1 . relative error
+            decay = 0.99
+
+            q_m = tf.Variable(initial_value=1.0, trainable=False)
             q_s = tf.Variable(initial_value=1.0, trainable=False)
-            q_t_s = tf.reduce_mean(q_t)
-            q_s_decay = 0.99
 
-            with tf.control_dependencies([q_s.assign(q_s*q_s_decay + q_t_s*(1.0-q_s_decay))]):
-                q_n = q / q_s
-                q_t_n = q_t / q_s
-                q_err = huber_loss(q_n, q_t_n)
+            #q_t_m, q_t_v = tf.nn.moments(q_t, axes=[0])
+            #q_t_s = tf.sqrt(q_t_v)
 
-            # OPT2 . absolute error
-            #q_err = huber_loss(q, q_t)# / tf.square(tf.reduce_mean(q_t))
+            #u_m = q_m.assign(q_m*decay + q_t_m*(1.0-decay)) # offset
+            #u_s = q_s.assign(q_s*decay + q_t_s*(1.0-decay)) # scale
+            #with tf.control_dependencies([u_m, u_s]):
+            #    q_n = (q - q_m) / (2.0 * q_s)
+            #    q_t_n = (q_t - q_m) / (2.0 * q_s)
+            #    q_err = huber_loss(q_n, q_t_n)
+
+            # OPT1 . relative error
+            #q_s = tf.Variable(initial_value=1.0, trainable=False)
+            #q_t_s = tf.reduce_mean(q_t)
+
+            #with tf.control_dependencies([q_s.assign(q_s*q_s_decay + q_t_s*(1.0-q_s_decay))]):
+            #    q_n = q / q_s
+            #    q_t_n = q_t / q_s
+            #    q_err = huber_loss(q_n, q_t_n)
+
+            # OPT2.0 absolute error huber
+            q_err = huber_loss(q, q_t)# / tf.square(tf.reduce_mean(q_t))
+
+            # OPT2.1 absolute error square
             #q_err = tf.square(q_t-q)
 
-            # only the latter-half steps will be counted for loss ...
+            # only the latter steps will be counted for loss ...
             n_mask = tf.maximum(n_t//2, 1)
             m_a = tf.zeros([n_b, n_t - n_mask], dtype=tf.float32)
             m_b = tf.ones([n_b, n_mask], dtype=tf.float32)
             mask = tf.concat([m_a, m_b], 1)
             mask = tf.reshape(mask, [-1])
             loss = tf.reduce_mean(q_err * mask)
+
         return q, q_t, a_t, loss, q_s
 
     #def _popart(self, y, t):

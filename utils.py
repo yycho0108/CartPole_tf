@@ -9,10 +9,16 @@ def get_dir(*args):
         os.makedirs(d)
     return d
 
-def directory_setup(task, **params):
+def directory_setup(task, run_id=None, **params):
     root = get_dir('data', task)
     run_root = get_dir(root, 'run')
-    run_id = '%02d' % len(os.walk(run_root).next()[1])
+    index = len(os.walk(run_root).next()[1])
+
+    if run_id is None:
+        run_id = str(index)
+    else:
+        run_id = '{}_{}'.format(index, run_id) 
+
     output_root = get_dir(run_root, run_id)
     output_graph = os.path.join(output_root, 'output_graph.pb')
     output_ckpt = os.path.join(output_root, 'model.ckpt')

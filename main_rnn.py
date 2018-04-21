@@ -3,15 +3,14 @@
 main_rnn.py
 
 @Author : Yoonyoung Cho
-@Date : 03/02/2018
+@Date : 04/19/2018
 
 Description : 
     Modification of main.py to run CartPole with recurrent neural networks (LSTMs)
     with DRQN-like architecture, following a [tutorial](https://github.com/awjuliani/DeepRL-Agents/blob/master/Deep-Recurrent-Q-Network.ipynb).
     Note that the CartPole model does not receive velocity-related data as input, meaning that it should learn to model the system motion.
 
-Notes : 
-    Currently the expeirments **do** receive velocity-related input.
+Notes : Currently the expeirments **do** receive velocity-related input.
 """
 
 from utils import *
@@ -27,19 +26,19 @@ from drqn import DRQN
 import argparse
 
 ## Network/Meta Parameters
-HS = [64]
+HS = [32,256]
 N_X = 4 # size of input
 N_A = 2 # size of action
 N_H = HS[-1]# number of hidden units
 U_FREQ = 8 # update frequency
 N_LOG = 16
 N_BATCH = 32 # size of training batch
-N_TRACE = 1
+N_TRACE = 4
 
 ## Learning Rate Parameters
 LR_MAX = 1e-4
 LR_MIN = 1e-5
-LR_DECAY_STEPS = 200000
+LR_DECAY_STEPS = 2000000
 
 ## Q-Learning Parameters
 GAMMA = .99 #Discount factor.
@@ -50,12 +49,12 @@ TAU = 1e-3#1e-3 #(1.0/100) * U_FREQ #Amount to update target network at each ste
 # Exploration Parameters
 EPS_INIT  = 1.0 #Starting chance of random action
 EPS_MIN  = 0.05 #Final chance of random action
-EPS_ANNEAL = 200000 #How many steps of training to reduce startE to endE.
+EPS_ANNEAL = 2000000 #How many steps of training to reduce startE to endE.
 EPS_DECAY = EPS_MIN ** (1.0/EPS_ANNEAL)
 #EPS_DECAY = 0.9999
 
 N_PRE = 50000 #Number of steps, pre-train
-N_MEM = 10000 # ~5000 episodes
+N_MEM = 100000 # ~5000 episodes
 
 GAME_STEPS = 999
 
@@ -87,15 +86,22 @@ def proc(x):
     # (x,v,t,w) -> (x,t)
     #return [x[0], x[2]]
     # decompose t -> sin(t), cos(t)
+    x[1] = x[3] = 0.0
     return list(x)
 
 class DRQNMain(object):
-    def __init__(self, env):
-        self._env = env
-        self._dirs = directory_setup('drqn', **PARAMS)
-        self._build()
 
-        self._sess = tf.Session()
+    def __init__(self, env, name):
+        self._env = env
+        #PARAMS['NAME'] = name
+        self._dirs = directory_setup('drqn', run_id=name, **PARAMS)
+        self._build()
+        
+        gpu_options = tf.GPUOptions(
+                allow_growth=True)
+        config = tf.ConfigProto(log_device_placement=False,
+                gpu_options=gpu_options)
+        self._sess = tf.Session(config=config)
         self.reset()
 
     def _build(self):
@@ -118,18 +124,26 @@ class DRQNMain(object):
             tf_step = tf.Variable(0, trainable=False)
             lr = tf.maximum(tf.train.exponential_decay(LR_MAX, tf_step, LR_DECAY_STEPS, LR_MIN/LR_MAX), LR_MIN)
             trainer = tf.train.AdamOptimizer(learning_rate=lr)
-            train_ops = trainer.minimize(
-                    drqn_a['loss'],
-                    var_list = va
-                    )
+            update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+            with tf.control_dependencies(update_ops):
+                g = trainer.compute_gradients(drqn_a['loss'], var_list=va)
+                train_ops = trainer.apply_gradients(g)
+                gn = tf.global_norm(g)
+                #train_ops = trainer.minimize(
+                #        drqn_a['loss'],
+                #        var_list = va
+                #        )
         graph = tf.get_default_graph()    
         writer = tf.summary.FileWriter(os.path.join(self._dirs['run_log_root'], 'train'), graph)
+
         with tf.name_scope('logs'):
             tf.summary.scalar('learning_rate', lr)
             tf.summary.scalar('q', tf.reduce_mean(drqn_a['q']))
             tf.summary.scalar('q_t', tf.reduce_mean(drqn_a['q_t']))
             tf.summary.scalar('loss', drqn_a['loss'])
             tf.summary.scalar('q_s', drqn_a['q_s'])
+            tf.summary.scalar('g', gn)
+
         summary = tf.summary.merge_all()
         saver = tf.train.Saver()
         
@@ -179,9 +193,13 @@ class DRQNMain(object):
 
         a, c, h = self.act(s0, c, h)
         s1, r, d, _ = env.step(a)
-        r = float(r)
-        #r /= 100.0
-        r = np.cos(5*s1[2])#xvtw
+        #r = float(r)
+        #s = xvtw
+        r = np.cos(5*s1[2]) # theta reward
+        #r = r * (1.0 - s1[0] / 2.4) # x reward
+        #r = r * (1.0-d)
+        #if d:
+        #    r = -100.0
         # TODO : engineered reward! danger.
         s1 = proc(s1)
         self._step += 1
@@ -283,6 +301,8 @@ class DRQNMain(object):
         while not sig._stop:
             # TODO : hardcoded max_step
             net_reward, entry = self.train_1(c0, h0, GAME_STEPS-2)
+            #if self._step > N_PRE:
+            #    self.update()
             self._memory.add(np.asarray(entry))
 
             self._writer.add_summary(tf.Summary(value=[tf.Summary.Value(
@@ -382,7 +402,7 @@ def main(opts):
     #    if d:
     #        env.reset()
 
-    app = DRQNMain(env)
+    app = DRQNMain(env, opts.name)
 
     if opts.load:
         # load
@@ -400,7 +420,12 @@ def main(opts):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Run DRQN on Cartpole.')
+    parser.add_argument('--name', type=str, default='')
     parser.add_argument('--load', type=str, default='')
     parser.add_argument('--train', type=str2bool, default=True)
     parser.add_argument('--test', type=str2bool, default=False)
-    main(parser.parse_args())
+
+    args = parser.parse_args()
+    if args.train and not args.name:
+        parser.error("--train requires --name!")
+    main(args)
