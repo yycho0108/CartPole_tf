@@ -26,14 +26,16 @@ from drqn import DRQN
 import argparse
 
 ## Network/Meta Parameters
-HS = [32,256]
+HS = [32,64]
 N_X = 4 # size of input
 N_A = 2 # size of action
 N_H = HS[-1]# number of hidden units
-U_FREQ = 8 # update frequency
 N_LOG = 16
 N_BATCH = 32 # size of training batch
-N_TRACE = 4
+N_TRACE = 8
+N_SKIP = 1
+
+U_FREQ = 8 * N_TRACE # update frequency
 
 ## Learning Rate Parameters
 LR_MAX = 1e-4
@@ -54,7 +56,7 @@ EPS_DECAY = EPS_MIN ** (1.0/EPS_ANNEAL)
 #EPS_DECAY = 0.9999
 
 N_PRE = 50000 #Number of steps, pre-train
-N_MEM = 100000 # ~5000 episodes
+N_MEM = 10000 # ~5000 episodes
 
 GAME_STEPS = 999
 
@@ -88,6 +90,19 @@ def proc(x):
     # decompose t -> sin(t), cos(t)
     x[1] = x[3] = 0.0
     return list(x)
+
+def get_eps(x):
+    if x < 1e6: # 1->0.1 in 1M steps
+        # from (0 - 1e6) 1 -> 0.1
+        return 1.0 * 0.1**(x*1.0/1e6)
+    elif x < 1e7: # 0.1 -> 0.01 in 9M steps
+        # from (1e6 - 1e7) 0.1 -> 0.05
+        return 0.1 * 0.5**((x-1e6) * 1.0 / 9e6)
+    elif x < 2e7:
+        #from (1e7-2e7) 0.05 -> 0.01
+        return 0.05 * 0.2**((x-1e7)*1.0/1e7)
+    else:
+        return 0.01
 
 class DRQNMain(object):
 
@@ -192,7 +207,12 @@ class DRQNMain(object):
         env = self._env
 
         a, c, h = self.act(s0, c, h)
-        s1, r, d, _ = env.step(a)
+
+        for i in range(N_SKIP):
+            s1, r, d, _ = env.step(a)
+            if d:
+                break
+
         #r = float(r)
         #s = xvtw
         r = np.cos(5*s1[2]) # theta reward
@@ -268,11 +288,12 @@ class DRQNMain(object):
         c = c0.copy()
         h = h0.copy()
 
-        for i in range(max_step):
+        for i in range(0, max_step, N_SKIP):
             s1, a, r, d, c, h = self.step(s0, c, h)
             entry.append(s0 + [a,r] + s1 + [d])
             if self._step > N_PRE:
-                self._eps = max(EPS_MIN, self._eps * EPS_DECAY)
+                #self._eps = max(EPS_MIN, self._eps * EPS_DECAY)
+                self._eps = get_eps(self._step - N_PRE)
                 if (self._step % U_FREQ) == 0:
                     self.update()
             net_reward += r
@@ -303,11 +324,17 @@ class DRQNMain(object):
             net_reward, entry = self.train_1(c0, h0, GAME_STEPS-2)
             #if self._step > N_PRE:
             #    self.update()
-            self._memory.add(np.asarray(entry))
+            if len(entry) >= N_TRACE:
+                self._memory.add(np.asarray(entry))
 
             self._writer.add_summary(tf.Summary(value=[tf.Summary.Value(
                 tag='net_reward',
                 simple_value=net_reward
+                )]), self._step)
+
+            self._writer.add_summary(tf.Summary(value=[tf.Summary.Value(
+                tag='eps',
+                simple_value=self._eps
                 )]), self._step)
             
             rewards.append(net_reward)

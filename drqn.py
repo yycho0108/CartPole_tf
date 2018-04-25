@@ -105,9 +105,19 @@ class DRQN(object):
         """ Build Q-Network """
         with tf.name_scope('qn', [x]):
             with slim.arg_scope(self._arg_scope()):
-                sa, sv = tf.split(x, 2, axis=1) # split into action-value streams
-                adv = slim.fully_connected(sa, self._n_action, scope='adv', activation_fn=None)
-                val = slim.fully_connected(sv, 1, scope='val', activation_fn=None)
+                xf = slim.fully_connected(x, 128,
+                        scope='xf', activation_fn=tf.nn.elu)
+                sa, sv = tf.split(xf, 2, axis=1) # split into action-value streams
+                adv = slim.fully_connected(sa, 64,
+                        scope='adv_0', activation_fn=tf.nn.elu)
+                adv = slim.fully_connected(adv, self._n_action,
+                        scope='adv_1', activation_fn=None)
+
+                val = slim.fully_connected(sv, 64,
+                        scope='val_0', activation_fn=tf.nn.elu)
+                val = slim.fully_connected(val, 1,
+                        scope='val_1', activation_fn=None)
+
                 q_y = val + (adv - tf.reduce_mean(adv, axis=1, keepdims=True))
                 a_y = tf.argmax(q_y, axis=1)
         return q_y, a_y
