@@ -32,7 +32,7 @@ N_A = 2 # size of action
 N_H = HS[-1]# number of hidden units
 N_LOG = 16
 N_BATCH = 32 # size of training batch
-N_TRACE = 8
+N_TRACE = 4
 N_SKIP = 1
 
 U_FREQ = 8 * N_TRACE # update frequency
@@ -309,6 +309,11 @@ class DRQNMain(object):
         self.run(tf.global_variables_initializer())
         self.run(self._copy_ops)
 
+    def add_summary(self, value, tag):
+        self._writer.add_summary(tf.Summary(value=[
+            tf.Summary.Value(tag=tag,simple_value=value)
+            ]), self._step)
+
     def train(self, n):
         """ train for n episodes """
         rewards = []
@@ -327,21 +332,20 @@ class DRQNMain(object):
             if len(entry) >= N_TRACE:
                 self._memory.add(np.asarray(entry))
 
-            self._writer.add_summary(tf.Summary(value=[tf.Summary.Value(
-                tag='net_reward',
-                simple_value=net_reward
-                )]), self._step)
-
-            self._writer.add_summary(tf.Summary(value=[tf.Summary.Value(
-                tag='eps',
-                simple_value=self._eps
-                )]), self._step)
-            
             rewards.append(net_reward)
 
             if i % 100 == 0 and i > 0:
-                r_mean = np.mean(rewards[-100:])
-                r_max = np.max(rewards[-100:])
+                rw = rewards[-100:]
+
+                r_mean = np.mean(rw)
+                r_min = np.min(rw)
+                r_max = np.max(rw)
+
+                self.add_summary('r_mean', r_mean)
+                self.add_summary('r_min', r_min)
+                self.add_summary('r_max', r_max)
+                self.add_summary('eps', self._eps)
+
                 print "[%d:%d] r(mean,max) (%.2f,%.2f) | Eps: %f" % (i, self._step, r_mean, r_max, self._eps)
             i += 1
 

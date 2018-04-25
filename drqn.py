@@ -105,18 +105,18 @@ class DRQN(object):
         """ Build Q-Network """
         with tf.name_scope('qn', [x]):
             with slim.arg_scope(self._arg_scope()):
-                xf = slim.fully_connected(x, 128,
-                        scope='xf', activation_fn=tf.nn.elu)
-                sa, sv = tf.split(xf, 2, axis=1) # split into action-value streams
-                adv = slim.fully_connected(sa, 64,
-                        scope='adv_0', activation_fn=tf.nn.elu)
-                adv = slim.fully_connected(adv, self._n_action,
-                        scope='adv_1', activation_fn=None)
+                #xf = slim.fully_connected(x, 128,
+                #        scope='xf', activation_fn=tf.nn.elu)
+                sa, sv = tf.split(x, 2, axis=1) # split into action-value streams
+                #adv = slim.fully_connected(sa, 64,
+                #        scope='adv_0', activation_fn=tf.nn.elu)
+                adv = slim.fully_connected(sa, self._n_action,
+                        scope='adv', activation_fn=None)
 
-                val = slim.fully_connected(sv, 64,
-                        scope='val_0', activation_fn=tf.nn.elu)
-                val = slim.fully_connected(val, 1,
-                        scope='val_1', activation_fn=None)
+                #val = slim.fully_connected(sv, 64,
+                #        scope='val_0', activation_fn=tf.nn.elu)
+                val = slim.fully_connected(sv, 1,
+                        scope='val', activation_fn=None)
 
                 q_y = val + (adv - tf.reduce_mean(adv, axis=1, keepdims=True))
                 a_y = tf.argmax(q_y, axis=1)
@@ -148,16 +148,16 @@ class DRQN(object):
             #    q_err = huber_loss(q_n, q_t_n)
 
             # OPT1 . relative error
-            #q_s = tf.Variable(initial_value=1.0, trainable=False)
-            #q_t_s = tf.reduce_mean(q_t)
+            q_s = tf.Variable(initial_value=1.0, trainable=False)
+            q_t_s = tf.reduce_mean(q_t)
 
-            #with tf.control_dependencies([q_s.assign(q_s*q_s_decay + q_t_s*(1.0-q_s_decay))]):
-            #    q_n = q / q_s
-            #    q_t_n = q_t / q_s
-            #    q_err = huber_loss(q_n, q_t_n)
+            with tf.control_dependencies([q_s.assign(q_s*decay + q_t_s*(1.0-decay))]):
+                q_n = q / q_s
+                q_t_n = q_t / q_s
+                q_err = huber_loss(q_n, q_t_n)
 
             # OPT2.0 absolute error huber
-            q_err = huber_loss(q, q_t)# / tf.square(tf.reduce_mean(q_t))
+            # q_err = huber_loss(q, q_t)# / tf.square(tf.reduce_mean(q_t))
 
             # OPT2.1 absolute error square
             #q_err = tf.square(q_t-q)
