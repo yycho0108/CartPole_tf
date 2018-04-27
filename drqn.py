@@ -147,10 +147,10 @@ class DRQN(object):
             #    q_t_n = (q_t - q_m) / (2.0 * q_s)
             #    q_err = huber_loss(q_n, q_t_n)
 
-            q_s = tf.Variable(initial_value=1.0, trainable=False)
-            q_t_s = tf.reduce_mean(q_t)
 
             # OPT1 . relative error
+            q_s = tf.Variable(initial_value=1.0, trainable=False)
+            q_t_s = tf.reduce_mean(q_t)
             #with tf.control_dependencies([q_s.assign(q_s*decay + q_t_s*(1.0-decay))]):
             #    q_n = q / q_s
             #    q_t_n = q_t / q_s

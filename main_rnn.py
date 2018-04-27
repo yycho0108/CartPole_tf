@@ -236,8 +236,12 @@ class DRQNMain(object):
 
         #r = float(r)
         #s = xvtw
-        r = np.cos(5*s1[2]) # theta reward
-        r -= (np.abs(s1[0])/2.4) # x reward
+        #r = np.cos(5*s1[2]) # theta reward
+        #r -= (np.abs(s1[0])/2.4) # x reward
+
+        x, theta = s1[0], s1[2]
+        r = np.cos(5*theta) + 0.5*(1.0-np.square(x)/(2.4**2))
+
         #r = r * (1.0 - s1[0] / 2.4) # x reward
         #r = r * (1.0-d)
         #if d:
