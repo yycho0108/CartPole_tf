@@ -31,12 +31,29 @@ class TraceMemory(object):
         self._size = size
         self._index = 0
         self._full = False
+
+    def save(self, path):
+        np.save(path, {
+            'memory' : self._memory,
+            'size' : self._size,
+            'index' : self._index,
+            'full' : self._full
+            })
+
+    def load(self, path):
+        data = np.load(path)
+        self._memory = data['memory']
+        self._size = data['size']
+        self._index = data['index']
+        self._full = data['full']
+
     def add(self, memory):
         self._memory[self._index] = memory
         self._index += 1
         if self._index >= self._size:
             self._index = 0
             self._full = True
+
     def sample(self, n, s):
         """
         n : batch_size

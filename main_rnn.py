@@ -30,7 +30,7 @@ HS = [32,64]
 N_X = 4 # size of input
 N_A = 2 # size of action
 N_H = HS[-1]# number of hidden units
-N_LOG = 16
+N_LOG = 64
 N_BATCH = 32 # size of training batch
 N_TRACE = 4
 N_SKIP = 1
@@ -309,7 +309,7 @@ class DRQNMain(object):
         self.run(tf.global_variables_initializer())
         self.run(self._copy_ops)
 
-    def add_summary(self, value, tag):
+    def add_summary(self, tag, value):
         self._writer.add_summary(tf.Summary(value=[
             tf.Summary.Value(tag=tag,simple_value=value)
             ]), self._step)
@@ -334,17 +334,33 @@ class DRQNMain(object):
 
             rewards.append(net_reward)
 
-            if i % 100 == 0 and i > 0:
-                rw = rewards[-100:]
-
+            if (i % N_LOG) == 0 and i > 0:
+                rw = rewards[-N_LOG:]
                 r_mean = np.mean(rw)
                 r_min = np.min(rw)
                 r_max = np.max(rw)
+                
+                # Create histogram using numpy        
+                counts, bin_edges = np.histogram(rw, bins=16)
+                bin_edges = bin_edges[1:]
 
-                self.add_summary('r_mean', r_mean)
-                self.add_summary('r_min', r_min)
-                self.add_summary('r_max', r_max)
-                self.add_summary('eps', self._eps)
+                hist = tf.HistogramProto()
+                hist.min = r_min
+                hist.max = r_max
+                hist.num = np.prod(np.shape(rw))
+                hist.sum = np.sum(rw)
+                hist.sum_squares = np.sum(np.square(rw))
+                [hist.bucket_limit.append(e) for e in bin_edges]
+                [hist.bucket.append(c) for c in counts]
+
+                self._writer.add_summary(tf.Summary(
+                    value=[tf.Summary.Value(tag='reward/hist', histo=hist)]
+                    ), self._step)
+
+                self.add_summary('reward/mean', r_mean)
+                self.add_summary('reward/min', r_min)
+                self.add_summary('reward/max', r_max)
+                self.add_summary('logs/eps', self._eps)
 
                 print "[%d:%d] r(mean,max) (%.2f,%.2f) | Eps: %f" % (i, self._step, r_mean, r_max, self._eps)
             i += 1
@@ -398,11 +414,15 @@ class DRQNMain(object):
     def save(self):
         path = self._dirs['output_ckpt']
         save_path = self._saver.save(self._sess, path)
+        self._memory.save(self._dirs['output_mem'])
         print("Model saved in file: %s" % save_path)
 
-    def load(self, path='/tmp/model.ckpt'):
-        ## TODO : actually not ignore path
-        self._saver.restore(self._sess, path)
+    def load(self, path='/tmp', train=False):
+        ckpt_path = os.path.join(path, 'model.ckpt')
+        self._saver.restore(self._sess, ckpt_path)
+        if train:
+            mem_path  = os.path.join(path, 'memory.npy')
+            self._memory.load(mem_path)
         print("Model loaded from file: %s" % path)
 
     def run(self, *args, **kwargs):
@@ -437,7 +457,7 @@ def main(opts):
 
     if opts.load:
         # load
-        app.load(opts.load)
+        app.load(opts.load, opts.train)
 
     if opts.train:
         # train

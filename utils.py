@@ -22,6 +22,7 @@ def directory_setup(task, run_id=None, **params):
     output_root = get_dir(run_root, run_id)
     output_graph = os.path.join(output_root, 'output_graph.pb')
     output_ckpt = os.path.join(output_root, 'model.ckpt')
+    output_mem = os.path.join(output_root, 'memory.npy')
     log_root = get_dir('/tmp', task+'_logs')
     run_log_root = os.path.join(log_root, run_id)
 
@@ -37,6 +38,7 @@ def directory_setup(task, run_id=None, **params):
             'output_root' : output_root,
             'output_graph' : output_graph,
             'output_ckpt' : output_ckpt,
+            'output_mem' : output_mem,
             'log_root' : log_root,
             'run_log_root' : run_log_root
             }
