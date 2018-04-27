@@ -389,7 +389,7 @@ class DRQNMain(object):
             c = c0.copy()
             h = h0.copy()
 
-            while not d and net_reward < 999:
+            while not d and net_reward < GAME_STEPS:
                 env.render()
                 x = np.expand_dims(proc(s), 0)
                 a, c, h = self.run([net['a_y'], net['c_out'], net['h_out']],
