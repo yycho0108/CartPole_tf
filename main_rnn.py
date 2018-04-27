@@ -32,7 +32,7 @@ N_A = 2 # size of action
 N_H = HS[-1]# number of hidden units
 N_LOG = 64
 N_BATCH = 32 # size of training batch
-N_TRACE = 4
+N_TRACE = 8
 N_SKIP = 1
 
 U_FREQ = 8 * N_TRACE # update frequency
@@ -40,7 +40,7 @@ U_FREQ = 8 * N_TRACE # update frequency
 ## Learning Rate Parameters
 LR_MAX = 1e-4
 LR_MIN = 1e-5
-LR_DECAY_STEPS = 2000000
+LR_DECAY_STEPS = int(1e7)
 
 ## Q-Learning Parameters
 GAMMA = .99 #Discount factor.
@@ -55,7 +55,7 @@ EPS_ANNEAL = 2000000 #How many steps of training to reduce startE to endE.
 EPS_DECAY = EPS_MIN ** (1.0/EPS_ANNEAL)
 #EPS_DECAY = 0.9999
 
-N_PRE = 50000 #Number of steps, pre-train
+N_PRE = int(1e5) #Number of steps, pre-train
 N_MEM = 10000 # ~5000 episodes
 
 GAME_STEPS = 999
@@ -87,28 +87,49 @@ def proc(x):
     # remove velocity information
     # (x,v,t,w) -> (x,t)
     #return [x[0], x[2]]
-    # decompose t -> sin(t), cos(t)
+    # decompose t -> sin(t), cos(t)?
     x[1] = x[3] = 0.0
     return list(x)
 
-def get_eps(x):
-    if x < 1e6: # 1->0.1 in 1M steps
-        # from (0 - 1e6) 1 -> 0.1
-        return 1.0 * 0.1**(x*1.0/1e6)
-    elif x < 1e7: # 0.1 -> 0.01 in 9M steps
-        # from (1e6 - 1e7) 0.1 -> 0.05
-        return 0.1 * 0.5**((x-1e6) * 1.0 / 9e6)
-    elif x < 2e7:
-        #from (1e7-2e7) 0.05 -> 0.01
-        return 0.05 * 0.2**((x-1e7)*1.0/1e7)
-    else:
-        return 0.01
+class EPS(object):
+    def __init__(self, ts, vs):
+        self._ts = np.asarray(ts, dtype=np.float32) # e.g. [1e6,  1e7]
+        self._vs = np.asarray(vs, dtype=np.float32) # e.g. [0.1, 0.01]
+    def __call__(self, t):
+        n = len(self._vs)
+        t0 = 0.0
+        v0 = 1.0
+        for i in range(n):
+            t1 = self._ts[i]
+            v1 = self._vs[i]
+            if t <= t1:
+                return v0 * (v1/v0)**((t-t0)/(t1-t0))
+            t0 = t1
+            v0 = v1
+        return self._vs[-1]
+
+get_eps = EPS(
+        ts=[5e6,  2e7,  5e7],
+        vs=[0.1, 0.05, 0.01]
+        )
+
+#def get_eps(x):
+#    if x < 1e6: # 1->0.1 in 1M steps
+#        # from (0 - 1e6) 1 -> 0.1
+#        return 1.0 * 0.1**(x*1.0/1e6)
+#    elif x < 1e7: # 0.1 -> 0.01 in 9M steps
+#        # from (1e6 - 1e7) 0.1 -> 0.05
+#        return 0.1 * 0.5**((x-1e6)*1.0/9e6)
+#    elif x < 2e7:
+#        #from (1e7-2e7) 0.05 -> 0.01
+#        return 0.05 * 0.2**((x-1e7)*1.0/1e7)
+#    else:
+#        return 0.01
 
 class DRQNMain(object):
-
-    def __init__(self, env, name):
+    def __init__(self, env, name, description):
         self._env = env
-        #PARAMS['NAME'] = name
+        PARAMS['DESCRIPTION'] = description
         self._dirs = directory_setup('drqn', run_id=name, **PARAMS)
         self._build()
         
@@ -216,6 +237,7 @@ class DRQNMain(object):
         #r = float(r)
         #s = xvtw
         r = np.cos(5*s1[2]) # theta reward
+        r -= (np.abs(s1[0])/2.4) # x reward
         #r = r * (1.0 - s1[0] / 2.4) # x reward
         #r = r * (1.0-d)
         #if d:
@@ -453,7 +475,7 @@ def main(opts):
     #    if d:
     #        env.reset()
 
-    app = DRQNMain(env, opts.name)
+    app = DRQNMain(env, opts.name, opts.description)
 
     if opts.load:
         # load
@@ -472,6 +494,7 @@ def main(opts):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Run DRQN on Cartpole.')
     parser.add_argument('--name', type=str, default='')
+    parser.add_argument('--description', type=str, default='')
     parser.add_argument('--load', type=str, default='')
     parser.add_argument('--train', type=str2bool, default=True)
     parser.add_argument('--test', type=str2bool, default=False)
