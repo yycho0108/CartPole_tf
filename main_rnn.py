@@ -45,7 +45,7 @@ LR_DECAY_STEPS = int(1e7)
 ## Q-Learning Parameters
 GAMMA = .99 #Discount factor.
 N_EPOCH = np.inf #20000 #Total number of episodes to train network for.
-N_TEST = 200 #Total number of episodes to train network for.
+N_TEST = 1 #Total number of episodes to train network for.
 TAU = 1e-3#1e-3 #(1.0/100) * U_FREQ #Amount to update target network at each step.
 
 # Exploration Parameters
@@ -58,7 +58,7 @@ EPS_DECAY = EPS_MIN ** (1.0/EPS_ANNEAL)
 N_PRE = int(1e5) #Number of steps, pre-train
 N_MEM = 10000 # ~5000 episodes
 
-GAME_STEPS = 999
+GAME_STEPS = 5000
 
 PARAMS = {
         'N_X' : N_X,
@@ -236,11 +236,11 @@ class DRQNMain(object):
 
         #r = float(r)
         #s = xvtw
-        #r = np.cos(5*s1[2]) # theta reward
-        #r -= (np.abs(s1[0])/2.4) # x reward
+        r = np.cos(5*s1[2]) # theta reward
+        r -= (np.abs(s1[0])/2.4) # x reward
 
-        x, theta = s1[0], s1[2]
-        r = np.cos(5*theta) + 0.5*(1.0-np.square(x)/(2.4**2))
+        #x, theta = s1[0], s1[2]
+        #r = np.cos(5*theta) + 0.5*(1.0-np.square(x)/(2.4**2))
 
         #r = r * (1.0 - s1[0] / 2.4) # x reward
         #r = r * (1.0-d)
@@ -404,6 +404,9 @@ class DRQNMain(object):
         h0 = np.zeros([1, N_H])
         sig = StopRequest()
         sig.start()
+
+        env.render()
+        x = raw_input('waiting ...')
 
         for i in range(n):
             if sig._stop:
