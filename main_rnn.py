@@ -3,14 +3,12 @@
 main_rnn.py
 
 @Author : Yoonyoung Cho
-@Date : 04/19/2018
+@Date : 05/02/2018
 
 Description : 
     Modification of main.py to run CartPole with recurrent neural networks (LSTMs)
     with DRQN-like architecture, following a [tutorial](https://github.com/awjuliani/DeepRL-Agents/blob/master/Deep-Recurrent-Q-Network.ipynb).
     Note that the CartPole model does not receive velocity-related data as input, meaning that it should learn to model the system motion.
-
-Notes : Currently the expeirments **do** receive velocity-related input.
 """
 
 from utils import *
